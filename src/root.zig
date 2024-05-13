@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const Error = error{MutateOnEmptyEntry};
+pub const Error = error{MutateOnEmptyEntry, SlotAlreadyReplaced};
 
 /// The `Arena` allows appending and removing elements that are referred to by
 /// `Arena(T, u32, u32).Index`.
@@ -54,12 +54,18 @@ pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
-        pub fn getByField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
-            return self.unmanaged.getByField(i, field);
+        pub fn getField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
+            return self.unmanaged.getField(i, field);
         }
 
-        pub fn setFieldValue(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
-            return self.unmanaged.setFieldValue(i, field, value);
+        /// Get a pointer to the data for one field in the arena. Never save this anywhere!
+        pub fn getFieldPtr(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
+            return self.unmanaged.getFieldPtr(i, field);
+        }
+
+        /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
+        pub fn setField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
+            return self.unmanaged.setField(i, field, value);
         }
 
         /// Overwrite one arena element with new data.
@@ -225,14 +231,23 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
-        pub fn getByField(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
+        pub fn getField(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
             return switch (self.statuses.items[i.index]) {
                 .occupied => if (self.contains(i)) self.entries.items(field)[i.index] else null,
                 else => null,
             };
         }
 
-        pub fn setFieldValue(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
+        /// Get a pointer to the data for one field in the arena. Never save this anywhere!
+        pub fn getFieldPtr(self: *Self, i: Index, comptime field: EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
+            return switch (self.statuses.items[i.index]) {
+                .occupied => if (self.contains(i)) &self.entries.items(field)[i.index] else null,
+                else => null,
+            };
+        }
+
+        /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
+        pub fn setField(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
             return switch (self.statuses.items[i.index]) {
                 .occupied => if (self.contains(i)) {
                     self.entries.items(field)[i.index] = value;
@@ -277,4 +292,59 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
             return Self.Iterator{ .ctx = self };
         }
     };
+}
+
+test {
+    const TestStruct = struct {
+        a: u32,
+        b: u32,
+    };
+    var arena = Arena(TestStruct, u32, u32).init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const index = try arena.append(TestStruct {
+        .a = 42,
+        .b = 43,
+    });
+    try testing.expect(index.index == 0);
+    try testing.expect(arena.get(index) != null);
+    const entry = arena.get(index).?;
+    try testing.expect(entry.a == 42);
+    try testing.expect(entry.b == 43);
+
+    // lets try another item
+    const index2 = try arena.append(TestStruct {
+        .a = 44,
+        .b = 45,
+    });
+
+    try testing.expect(index2.index == 1);
+    try testing.expect(arena.get(index2) != null);
+    const entry2 = arena.get(index2).?;
+    try testing.expect(entry2.a == 44);
+    try testing.expect(entry2.b == 45);
+
+    // lets try and mutate and check the generation
+    try arena.mutate(index, TestStruct {
+        .a = 46,
+        .b = 47,
+    });
+
+    const entry3 = arena.get(index).?;
+    try testing.expect(entry3.a == 46);
+    try testing.expect(entry3.b == 47);
+
+    // lets mutate by setting field
+    try arena.setField(index, .a, 48);
+    const entry4 = arena.get(index).?;
+    try testing.expect(entry4.a == 48);
+    try testing.expect(entry4.b == 47);
+
+
+    const ptr = arena.getFieldPtr(index, .a).?;
+    ptr.* = 49;
+
+    const entry5 = arena.get(index).?;
+    try testing.expect(entry5.a == 49);
+    try testing.expect(entry5.b == 47);
 }
