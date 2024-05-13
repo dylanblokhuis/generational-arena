@@ -226,16 +226,16 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
         pub fn getByField(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
-            return switch (self.unmanaged.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) self.unmanaged.entries.items(field)[i.index] else null,
+            return switch (self.statuses.items[i.index]) {
+                .occupied => if (self.contains(i)) self.entries.items(field)[i.index] else null,
                 else => null,
             };
         }
 
         pub fn setFieldValue(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
-            return switch (self.unmanaged.statuses.items[i.index]) {
+            return switch (self.statuses.items[i.index]) {
                 .occupied => if (self.contains(i)) {
-                    self.unmanaged.entries.items(field)[i.index] = value;
+                    self.entries.items(field)[i.index] = value;
                 } else error.SlotAlreadyReplaced,
                 else => error.MutateOnEmptyEntry,
             };
