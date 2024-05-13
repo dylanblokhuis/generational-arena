@@ -3,7 +3,8 @@ const testing = std.testing;
 
 pub const Error = error{MutateOnEmptyEntry};
 
-/// Generally you can set IndexType and GenerationType to be usize or u32
+/// The `Arena` allows appending and removing elements that are referred to by
+/// `Arena(T, u32, u32).Index`.
 pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType: type) type {
     return struct {
         const Self = @This();
@@ -54,19 +55,11 @@ pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
         pub fn getByField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
-            return switch (self.unmanaged.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) self.unmanaged.entries.items(field)[i.index] else null,
-                else => null,
-            };
+            return self.unmanaged.getByField(i, field);
         }
 
         pub fn setFieldValue(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
-            return switch (self.unmanaged.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) {
-                    self.unmanaged.entries.items(field)[i.index] = value;
-                } else error.SlotAlreadyReplaced,
-                else => error.MutateOnEmptyEntry,
-            };
+            return self.unmanaged.setFieldValue(i, field, value);
         }
 
         /// Overwrite one arena element with new data.
@@ -87,7 +80,6 @@ pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType
     };
 }
 
-/// Generally you can set IndexType and GenerationType to be usize or u32
 pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime GenerationType: type) type {
     return struct {
         const Self = @This();
@@ -233,10 +225,19 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
-        pub fn get_by_field(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) self.entries.items(field)[i.index] else null,
+        pub fn getByField(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
+            return switch (self.unmanaged.statuses.items[i.index]) {
+                .occupied => if (self.contains(i)) self.unmanaged.entries.items(field)[i.index] else null,
                 else => null,
+            };
+        }
+
+        pub fn setFieldValue(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
+            return switch (self.unmanaged.statuses.items[i.index]) {
+                .occupied => if (self.contains(i)) {
+                    self.unmanaged.entries.items(field)[i.index] = value;
+                } else error.SlotAlreadyReplaced,
+                else => error.MutateOnEmptyEntry,
             };
         }
 
