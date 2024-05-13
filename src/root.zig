@@ -3,16 +3,15 @@ const testing = std.testing;
 
 pub const Error = error{MutateOnEmptyEntry};
 
-/// The `Arena` allows appending and removing elements that are referred to by
-/// `Arena(T).Index`.
-pub fn Arena(comptime T: type) type {
+/// Generally you can set IndexType and GenerationType to be usize or u32
+pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType: type) type {
     return struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
         unmanaged: Unmanaged,
 
-        const Unmanaged = ArenaUnmanaged(T);
+        const Unmanaged = ArenaUnmanaged(T, IndexType, GenerationType);
 
         pub const Index = Unmanaged.Index;
         pub const Entry = Unmanaged.Entry;
@@ -54,10 +53,19 @@ pub fn Arena(comptime T: type) type {
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
-        pub fn get_by_field(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
+        pub fn getByField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
             return switch (self.unmanaged.statuses.items[i.index]) {
                 .occupied => if (self.contains(i)) self.unmanaged.entries.items(field)[i.index] else null,
                 else => null,
+            };
+        }
+
+        pub fn setFieldValue(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
+            return switch (self.unmanaged.statuses.items[i.index]) {
+                .occupied => if (self.contains(i)) {
+                    self.unmanaged.entries.items(field)[i.index] = value;
+                } else error.SlotAlreadyReplaced,
+                else => error.MutateOnEmptyEntry,
             };
         }
 
@@ -79,9 +87,8 @@ pub fn Arena(comptime T: type) type {
     };
 }
 
-pub fn ArenaUnmanaged(comptime T: type) type {
-    const IndexType = u32;
-    const GenerationType = u32;
+/// Generally you can set IndexType and GenerationType to be usize or u32
+pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime GenerationType: type) type {
     return struct {
         const Self = @This();
 
