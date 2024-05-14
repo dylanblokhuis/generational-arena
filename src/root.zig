@@ -279,7 +279,7 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
             pos: IndexType = 0,
 
             pub fn next(self: *Iterator) ?Index {
-                if ((self.pos) >= self.ctx.len) return null;
+                if (self.pos >= self.ctx.len) return null;
                 return switch (self.ctx.statuses.items[self.pos]) {
                     .empty => {
                         self.pos += 1;
