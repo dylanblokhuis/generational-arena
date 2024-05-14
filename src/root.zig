@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const Error = error{MutateOnEmptyEntry, SlotAlreadyReplaced};
+pub const Error = error{ MutateOnEmptyEntry, SlotAlreadyReplaced };
 
 /// The `Arena` allows appending and removing elements that are referred to by
 /// `Arena(T, u32, u32).Index`.
@@ -61,6 +61,14 @@ pub fn Arena(comptime T: type, comptime IndexType: type, comptime GenerationType
         /// Get a pointer to the data for one field in the arena. Never save this anywhere!
         pub fn getFieldPtr(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
             return self.unmanaged.getFieldPtr(i, field);
+        }
+
+        pub fn getUnchecked(self: *Self, i: Index) Entry {
+            return self.unmanaged.getUnchecked(i);
+        }
+
+        pub fn getFieldPtrUnchecked(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) *std.meta.fieldInfo(T, field).type {
+            return self.unmanaged.getFieldPtrUnchecked(i, field);
         }
 
         /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
@@ -224,44 +232,41 @@ pub fn ArenaUnmanaged(comptime T: type, comptime IndexType: type, comptime Gener
 
         /// Obtain all the data for one entry in the arena.
         pub fn get(self: *Self, i: Index) ?Entry {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) self.entries.get(i.index) else null,
-                else => null,
-            };
+            return if (self.contains(i)) self.entries.get(i.index) else null;
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
         pub fn getField(self: *Self, i: Index, comptime field: EntryList.Field) ?std.meta.fieldInfo(T, field).type {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) self.entries.items(field)[i.index] else null,
-                else => null,
-            };
+            return if (self.contains(i)) self.entries.items(field)[i.index] else null;
         }
 
         /// Get a pointer to the data for one field in the arena. Never save this anywhere!
         pub fn getFieldPtr(self: *Self, i: Index, comptime field: EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) &self.entries.items(field)[i.index] else null,
-                else => null,
-            };
+            return if (self.contains(i)) &self.entries.items(field)[i.index] else null;
+        }
+
+        pub fn getUnchecked(self: *Self, i: Index) Entry {
+            std.debug.assert(self.contains(i));
+            return self.entries.get(i.index);
+        }
+
+        pub fn getFieldPtrUnchecked(self: *Self, i: Index, comptime field: EntryList.Field) *std.meta.fieldInfo(T, field).type {
+            std.debug.assert(self.contains(i));
+            return &self.entries.items(field)[i.index];
         }
 
         /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
         pub fn setField(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => if (self.contains(i)) {
-                    self.entries.items(field)[i.index] = value;
-                } else error.SlotAlreadyReplaced,
-                else => error.MutateOnEmptyEntry,
-            };
+            return if (self.contains(i)) {
+                self.entries.items(field)[i.index] = value;
+            } else error.SlotAlreadyReplaced;
         }
 
         /// Overwrite one arena element with new data.
         pub fn mutate(self: *Self, i: Index, entry: Entry) !void {
-            return switch (self.statuses.items[i.index]) {
-                .occupied => self.entries.set(i.index, entry),
-                else => return Error.MutateOnEmptyEntry,
-            };
+            if (self.contains(i)) {
+                self.entries.set(i.index, entry);
+            } else return Error.MutateOnEmptyEntry;
         }
 
         /// Check if the arena is empty
@@ -302,7 +307,7 @@ test {
     var arena = Arena(TestStruct, u32, u32).init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const index = try arena.append(TestStruct {
+    const index = try arena.append(TestStruct{
         .a = 42,
         .b = 43,
     });
@@ -313,7 +318,7 @@ test {
     try testing.expect(entry.b == 43);
 
     // lets try another item
-    const index2 = try arena.append(TestStruct {
+    const index2 = try arena.append(TestStruct{
         .a = 44,
         .b = 45,
     });
@@ -325,7 +330,7 @@ test {
     try testing.expect(entry2.b == 45);
 
     // lets try and mutate and check the generation
-    try arena.mutate(index, TestStruct {
+    try arena.mutate(index, TestStruct{
         .a = 46,
         .b = 47,
     });
@@ -340,11 +345,22 @@ test {
     try testing.expect(entry4.a == 48);
     try testing.expect(entry4.b == 47);
 
-
     const ptr = arena.getFieldPtr(index, .a).?;
     ptr.* = 49;
 
     const entry5 = arena.get(index).?;
     try testing.expect(entry5.a == 49);
     try testing.expect(entry5.b == 47);
+
+    // test unchecked methods
+    const entry6 = arena.getUnchecked(index);
+    try testing.expect(entry6.a == 49);
+    try testing.expect(entry6.b == 47);
+
+    const ptr2 = arena.getFieldPtrUnchecked(index, .a);
+    ptr2.* = 50;
+
+    const entry7 = arena.getUnchecked(index);
+    try testing.expect(entry7.a == 50);
+    try testing.expect(entry7.b == 47);
 }
