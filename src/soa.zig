@@ -55,11 +55,6 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
             return self.unmanaged.get(i);
         }
 
-        /// Obtain a pointer to the data for one entry in the arena. Never save this anywhere!
-        pub fn getPtr(self: *Self, i: Index) ?*Entry {
-            return self.unmanaged.getPtr(i);
-        }
-
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
         pub fn getField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
             return self.unmanaged.getField(i, field);
