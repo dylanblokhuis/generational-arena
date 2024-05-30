@@ -83,6 +83,11 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
             self.unmanaged.mutate(i, entry) catch |err| return err;
         }
 
+        /// Get the handle by index, does extra bounds checking
+        pub fn getHandleByIndex(self: *Self, index: Unmanaged.IndexType) ?Index {
+            return self.unmanaged.getHandleByIndex(index);
+        }
+
         /// Check if the arena is empty
         pub fn isEmpty(self: *Self) bool {
             return self.unmanaged.isEmpty();
@@ -274,6 +279,19 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
             } else return Error.MutateOnEmptyEntry;
         }
 
+        /// Get the handle by index, does extra bounds checking
+        pub fn getHandleByIndex(self: *Self, index: IndexType) ?Index {
+            if (index >= self.len) {
+                return null;
+            }
+            return switch (self.statuses.items[index]) {
+                .occupied => |occupant| {
+                    return occupant;
+                },
+                else => return null,
+            };
+        }
+
         /// Check if the arena is empty
         pub inline fn isEmpty(self: *Self) bool {
             return self.len == 0;
@@ -395,6 +413,11 @@ test {
     });
     try testing.expect(index3.index == 0);
     try testing.expect(index3.generation == 1);
+
+    // check handle by index
+    try testing.expect(arena.getHandleByIndex(0) != null);
+    _ = arena.remove(arena.getHandleByIndex(1).?);
+    try testing.expect(arena.getHandleByIndex(1) == null);
 
     // check clear
     arena.clear();

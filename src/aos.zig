@@ -72,6 +72,10 @@ pub fn Arena(comptime T: type, comptime InputIndexType: type, comptime InputGene
             self.unmanaged.mutate(i, entry) catch |err| return err;
         }
 
+        pub fn getHandleByIndex(self: *Self, index: Unmanaged.IndexType) ?Index {
+            return self.unmanaged.getHandleByIndex(index);
+        }
+
         /// Check if the arena is empty
         pub fn isEmpty(self: *Self) bool {
             return self.unmanaged.isEmpty();
@@ -251,6 +255,18 @@ pub fn ArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comptime 
             } else return Error.MutateOnEmptyEntry;
         }
 
+        pub fn getHandleByIndex(self: *Self, index: IndexType) ?Index {
+            if (index >= self.len) {
+                return null;
+            }
+            return switch (self.statuses.items[index]) {
+                .occupied => |occupant| {
+                    return occupant;
+                },
+                else => return null,
+            };
+        }
+
         /// Check if the arena is empty
         pub inline fn isEmpty(self: *Self) bool {
             return self.len == 0;
@@ -352,6 +368,11 @@ test {
     });
     try testing.expect(index3.index == 0);
     try testing.expect(index3.generation == 1);
+
+    //  test get handle by index
+    try testing.expect(arena.getHandleByIndex(0) != null);
+    _ = arena.remove(arena.getHandleByIndex(1).?);
+    try testing.expect(arena.getHandleByIndex(1) == null);
 
     // check clear
     arena.clear();
