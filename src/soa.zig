@@ -281,7 +281,7 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
 
         /// Get the handle by index, does extra bounds checking
         pub fn getHandleByIndex(self: *Self, index: IndexType) ?Index {
-            if (index >= self.len) {
+            if (index >= self.statuses.items.len) {
                 return null;
             }
             return switch (self.statuses.items[index]) {

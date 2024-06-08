@@ -256,7 +256,7 @@ pub fn ArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comptime 
         }
 
         pub fn getHandleByIndex(self: *Self, index: IndexType) ?Index {
-            if (index >= self.len) {
+            if (index >= self.statuses.items.len) {
                 return null;
             }
             return switch (self.statuses.items[index]) {
