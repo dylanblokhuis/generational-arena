@@ -98,9 +98,48 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
         }
 
         pub const Iterator = Unmanaged.Iterator;
-
         pub inline fn iterator(self: *Self) Iterator {
             return self.unmanaged.iterator();
+        }
+
+        pub fn IteratorField(comptime field: Unmanaged.EntryList.Field) type {
+            return struct {
+                ctx: *Self,
+                pos: Unmanaged.IndexType = 0,
+
+                pub fn next(self: *@This()) ?std.meta.fieldInfo(T, field).type {
+                    if (self.pos >= self.ctx.unmanaged.len) return null;
+                    return switch (self.ctx.unmanaged.statuses.items[self.pos]) {
+                        .empty => {
+                            self.pos += 1;
+                            return self.next();
+                        },
+                        .occupied => |occupant| {
+                            self.pos += 1;
+                            return self.ctx.unmanaged.entries.items(field)[occupant.index];
+                        },
+                    };
+                }
+            };
+        }
+
+        pub const DenseIterator = Unmanaged.DenseIterator;
+        pub inline fn denseIterator(self: *Self) DenseIterator {
+            return self.unmanaged.denseIterator();
+        }
+
+        pub fn DenseIteratorField(comptime field: Unmanaged.EntryList.Field) type {
+            return struct {
+                ctx: *Self,
+                pos: usize = 0,
+
+                pub fn next(self: *@This()) ?*std.meta.fieldInfo(T, field).type {
+                    if (self.pos >= self.ctx.unmanaged.dense.items.len) return null;
+                    const index = self.ctx.unmanaged.dense.items[self.pos];
+                    self.pos += 1;
+                    return &self.ctx.unmanaged.entries.items(field)[index];
+                }
+            };
         }
     };
 }
@@ -146,15 +185,18 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
         pub const Entry = T;
         const EntryList = std.MultiArrayList(Entry);
         const StatusList = std.ArrayListUnmanaged(EntryStatus);
+        const DenseList = std.ArrayListUnmanaged(IndexType);
 
         entries: EntryList = .{},
         statuses: StatusList = .{},
+        dense: DenseList = .{},
         free_list_head: ?IndexType = null,
         len: IndexType = 0,
 
         pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
             self.entries.deinit(allocator);
             self.statuses.deinit(allocator);
+            self.dense.deinit(allocator);
         }
 
         /// Get the current capacity of the arena
@@ -189,6 +231,7 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
             const index = try self.alloc(allocator);
             self.entries.set(index.index, item);
             self.statuses.items[index.index] = EntryStatus.Occupied(index);
+            try self.dense.append(allocator, index.index);
             return index;
         }
 
@@ -198,6 +241,7 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
             self.statuses.clearRetainingCapacity();
             self.statuses.expandToCapacity();
             self.entries.setCapacity(allocator, self.statuses.capacity) catch unreachable;
+            self.dense.clearRetainingCapacity();
 
             const end = self.statuses.capacity;
             for (self.statuses.items, 0..) |*status, i| {
@@ -230,6 +274,15 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
                     self.statuses.items[i.index] = EntryStatus.Empty(self.free_list_head, new_generation);
                     self.free_list_head = i.index;
                     self.len -= 1;
+
+                    // remove from dense list
+                    for (self.dense.items, 0..) |dense_index, dense_pos| {
+                        if (dense_index == i.index) {
+                            _ = self.dense.swapRemove(dense_pos);
+                            break;
+                        }
+                    }
+
                     return self.entries.get(i.index);
                 } else return null,
                 else => null,
@@ -349,6 +402,36 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
                 }
             };
         }
+
+        pub const DenseIterator = struct {
+            ctx: *Self,
+            pos: usize = 0,
+
+            pub fn next(self: *DenseIterator) ?Entry {
+                if (self.pos >= self.ctx.dense.items.len) return null;
+                const index = self.ctx.dense.items[self.pos];
+                self.pos += 1;
+                return self.ctx.entries.get(index);
+            }
+        };
+
+        pub fn denseIterator(self: *Self) DenseIterator {
+            return DenseIterator{ .ctx = self };
+        }
+
+        pub fn DenseIteratorField(comptime field: EntryList.Field) type {
+            return struct {
+                ctx: *Self,
+                pos: usize = 0,
+
+                pub fn next(self: *@This()) ?*std.meta.fieldInfo(T, field).type {
+                    if (self.pos >= self.ctx.dense.items.len) return null;
+                    const index = self.ctx.dense.items[self.pos];
+                    self.pos += 1;
+                    return &self.ctx.entries.items(field)[index];
+                }
+            };
+        }
     };
 }
 
@@ -454,11 +537,21 @@ test {
     try testing.expect(index3.index == 0);
     try testing.expect(index3.generation == 1);
 
-    var iter = Arena.Unmanaged.IteratorField(.a){ .ctx = &arena.unmanaged };
-    while (iter.next()) |field| {
-        std.debug.print("{any}\n", .{field});
-        // try testing.expect(field != null);
-    }
+    // var iter = Arena.IteratorField(.a){ .ctx = &arena };
+    // while (iter.next()) |field| {
+    //     try testing.expect(field.);
+    //     // try testing.expect(field != null);
+    // }
+
+    // var dense_iter = arena.denseIterator();
+    // while (dense_iter.next()) |e| {
+    //     std.debug.print("{any}\n", .{e});
+    // }
+
+    // var dense_iter_field = Arena.DenseIteratorField(.a){ .ctx = &arena };
+    // while (dense_iter_field.next()) |field| {
+    //     std.debug.print("{any}\n", .{field.*});
+    // }
 
     // check handle by index
     try testing.expect(arena.getHandleByIndex(0) != null);
