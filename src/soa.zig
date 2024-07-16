@@ -29,73 +29,77 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
             self.unmanaged.deinit(self.allocator);
         }
 
-        pub fn capacity(self: *const Self) Unmanaged.IndexType {
+        pub inline fn capacity(self: *const Self) Unmanaged.IndexType {
             return self.unmanaged.capacity();
         }
 
-        pub fn append(self: *Self, item: T) !Index {
+        pub inline fn append(self: *Self, item: T) !Index {
             return self.unmanaged.append(self.allocator, item);
         }
 
-        pub fn clear(self: *Self) void {
+        pub inline fn clear(self: *Self) void {
             self.unmanaged.clear(self.allocator);
         }
 
-        pub fn remove(self: *Self, i: Index) ?Entry {
+        pub inline fn remove(self: *Self, i: Index) ?Entry {
             return self.unmanaged.remove(i);
         }
 
         /// Check if an index exists in the arena
-        pub fn contains(self: *Self, i: Index) bool {
+        pub inline fn contains(self: *Self, i: Index) bool {
             return self.unmanaged.contains(i);
         }
 
         /// Obtain all the data for one entry in the arena.
-        pub fn get(self: *Self, i: Index) ?Entry {
+        pub inline fn get(self: *Self, i: Index) ?Entry {
             return self.unmanaged.get(i);
         }
 
         /// Obtain the data for one field in the arena. Useful if you only to split hot or cold data.
-        pub fn getField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
+        pub inline fn getField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?std.meta.fieldInfo(T, field).type {
             return self.unmanaged.getField(i, field);
         }
 
         /// Get a pointer to the data for one field in the arena. Never save this anywhere!
-        pub fn getFieldPtr(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
+        pub inline fn getFieldPtr(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) ?*std.meta.fieldInfo(T, field).type {
             return self.unmanaged.getFieldPtr(i, field);
         }
 
-        pub fn getUnchecked(self: *Self, i: Index) Entry {
+        pub inline fn getUnchecked(self: *Self, i: Index) Entry {
             return self.unmanaged.getUnchecked(i);
         }
 
-        pub fn getFieldPtrUnchecked(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) *std.meta.fieldInfo(T, field).type {
+        pub inline fn getFieldPtrUnchecked(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field) *std.meta.fieldInfo(T, field).type {
             return self.unmanaged.getFieldPtrUnchecked(i, field);
         }
 
-        /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
-        pub fn setField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
+        /// Set the data for one field in the arena, this won't bump the generation. See .set(..) for that.
+        pub inline fn setField(self: *Self, i: Index, comptime field: Unmanaged.EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
             return self.unmanaged.setField(i, field, value);
         }
 
         /// Overwrite one arena element with new data.
-        pub fn mutate(self: *Self, i: Index, entry: Entry) !void {
-            self.unmanaged.mutate(i, entry) catch |err| return err;
+        pub inline fn set(self: *Self, i: Index, entry: Entry) !void {
+            self.unmanaged.set(i, entry) catch |err| return err;
+        }
+
+        pub inline fn setUnchecked(self: *Self, i: Index, entry: Entry) void {
+            self.unmanaged.setUnchecked(i, entry);
         }
 
         /// Get the handle by index, does extra bounds checking
-        pub fn getHandleByIndex(self: *Self, index: Unmanaged.IndexType) ?Index {
+        pub inline fn getHandleByIndex(self: *Self, index: Unmanaged.IndexType) ?Index {
             return self.unmanaged.getHandleByIndex(index);
         }
 
         /// Check if the arena is empty
-        pub fn isEmpty(self: *Self) bool {
+        pub inline fn isEmpty(self: *Self) bool {
             return self.unmanaged.isEmpty();
         }
 
         pub const Iterator = Unmanaged.Iterator;
 
-        pub fn iterator(self: *Self) Iterator {
+        pub inline fn iterator(self: *Self) Iterator {
             return self.unmanaged.iterator();
         }
     };
@@ -265,7 +269,7 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
             return &self.entries.items(field)[i.index];
         }
 
-        /// Set the data for one field in the arena, this won't bump the generation. See .mutate(..) for that.
+        /// Set the data for one field in the arena, this won't bump the generation. See .set(..) for that.
         pub fn setField(self: *Self, i: Index, comptime field: EntryList.Field, value: std.meta.fieldInfo(T, field).type) !void {
             return if (self.contains(i)) {
                 self.entries.items(field)[i.index] = value;
@@ -273,10 +277,15 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
         }
 
         /// Overwrite one arena element with new data.
-        pub fn mutate(self: *Self, i: Index, entry: Entry) !void {
+        pub fn set(self: *Self, i: Index, entry: Entry) !void {
             if (self.contains(i)) {
                 self.entries.set(i.index, entry);
             } else return Error.MutateOnEmptyEntry;
+        }
+
+        pub fn setUnchecked(self: *Self, i: Index, entry: Entry) void {
+            std.debug.assert(self.contains(i));
+            self.entries.set(i.index, entry);
         }
 
         /// Get the handle by index, does extra bounds checking
@@ -355,7 +364,7 @@ test {
     try testing.expect(entry2.b == 45);
 
     // lets try and mutate and check the generation
-    try arena.mutate(index, TestStruct{
+    try arena.set(index, TestStruct{
         .a = 46,
         .b = 47,
     });
@@ -395,12 +404,21 @@ test {
     try testing.expect(entry7.b == 47);
 
     // try mutate
-    try arena.mutate(index, TestStruct{
+    try arena.set(index, TestStruct{
         .a = 51,
         .b = 52,
     });
     try testing.expect(arena.get(index).?.a == 51);
     try testing.expect(arena.get(index).?.b == 52);
+
+    // try mutate unchecked
+    arena.setUnchecked(index, TestStruct{
+        .a = 55,
+        .b = 56,
+    });
+
+    try testing.expect(arena.get(index).?.a == 55);
+    try testing.expect(arena.get(index).?.b == 56);
 
     // check if remove
     try testing.expect(arena.remove(index) != null);
