@@ -13,7 +13,7 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
         allocator: std.mem.Allocator,
         unmanaged: Unmanaged,
 
-        const Unmanaged = MultiArenaUnmanaged(T, InputIndexType, InputGenerationType);
+        pub const Unmanaged = MultiArenaUnmanaged(T, InputIndexType, InputGenerationType);
 
         pub const Index = Unmanaged.Index;
         pub const Entry = Unmanaged.Entry;
@@ -328,6 +328,27 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
         pub fn iterator(self: *Self) Iterator {
             return Self.Iterator{ .ctx = self };
         }
+
+        pub fn IteratorField(comptime field: EntryList.Field) type {
+            return struct {
+                ctx: *Self,
+                pos: IndexType = 0,
+
+                pub fn next(self: *@This()) ?std.meta.fieldInfo(T, field).type {
+                    if (self.pos >= self.ctx.len) return null;
+                    return switch (self.ctx.statuses.items[self.pos]) {
+                        .empty => {
+                            self.pos += 1;
+                            return self.next();
+                        },
+                        .occupied => |occupant| {
+                            self.pos += 1;
+                            return self.ctx.entries.items(field)[occupant.index];
+                        },
+                    };
+                }
+            };
+        }
     };
 }
 
@@ -336,7 +357,8 @@ test {
         a: u32,
         b: u32,
     };
-    var arena = MultiArena(TestStruct, u32, u32).init(std.heap.page_allocator);
+    const Arena = MultiArena(TestStruct, u32, u32);
+    var arena = Arena.init(std.heap.page_allocator);
     defer arena.deinit();
     try testing.expect(arena.isEmpty());
     try testing.expect(arena.capacity() == 0);
@@ -431,6 +453,12 @@ test {
     });
     try testing.expect(index3.index == 0);
     try testing.expect(index3.generation == 1);
+
+    var iter = Arena.Unmanaged.IteratorField(.a){ .ctx = &arena.unmanaged };
+    while (iter.next()) |field| {
+        std.debug.print("{any}\n", .{field});
+        // try testing.expect(field != null);
+    }
 
     // check handle by index
     try testing.expect(arena.getHandleByIndex(0) != null);
