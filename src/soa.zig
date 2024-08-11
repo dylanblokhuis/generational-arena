@@ -128,18 +128,8 @@ pub fn MultiArena(comptime T: type, comptime InputIndexType: type, comptime Inpu
             return self.unmanaged.denseIterator();
         }
 
-        pub fn DenseIteratorField(comptime field: Unmanaged.EntryList.Field) type {
-            return struct {
-                ctx: *Self,
-                pos: usize = 0,
-
-                pub fn next(self: *@This()) ?*std.meta.fieldInfo(T, field).type {
-                    if (self.pos >= self.ctx.unmanaged.dense.items.len) return null;
-                    const index = self.ctx.unmanaged.dense.items[self.pos];
-                    self.pos += 1;
-                    return &self.ctx.unmanaged.entries.items(field)[index];
-                }
-            };
+        pub fn denseIteratorField(self: *Self, comptime field: Unmanaged.EntryList.Field) Unmanaged.DenseIteratorField(field) {
+            return @This().Unmanaged.DenseIteratorField(field){ .ctx = &self.unmanaged };
         }
     };
 }
@@ -432,6 +422,10 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
                 }
             };
         }
+
+        pub fn denseIteratorField(self: *Self, comptime field: EntryList.Field) DenseIteratorField(field) {
+            return @This().DenseIteratorField(field){ .ctx = self };
+        }
     };
 }
 
@@ -548,10 +542,10 @@ test {
     //     std.debug.print("{any}\n", .{e});
     // }
 
-    // var dense_iter_field = Arena.DenseIteratorField(.a){ .ctx = &arena };
-    // while (dense_iter_field.next()) |field| {
-    //     std.debug.print("{any}\n", .{field.*});
-    // }
+    var dense_iter_field = arena.denseIteratorField(.a);
+    while (dense_iter_field.next()) |field| {
+        std.debug.print("{any}\n", .{field.*});
+    }
 
     // check handle by index
     try testing.expect(arena.getHandleByIndex(0) != null);
