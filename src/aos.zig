@@ -186,7 +186,7 @@ pub fn ArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comptime 
             const end = self.statuses.capacity;
             for (self.statuses.items, 0..) |*status, i| {
                 const generation = switch (status.*) {
-                    .occupied => |value| value.generation + 1,
+                    .occupied => |value| if (value.generation == std.math.maxInt(GenerationType)) 0 else value.generation + 1,
                     .empty => |value| value.generation,
                 };
                 if (i == end - 1) {
@@ -210,7 +210,7 @@ pub fn ArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comptime 
             const entry_to_delete = self.statuses.items[i.index];
             return switch (entry_to_delete) {
                 .occupied => |occupant| if (occupant.equals(i)) {
-                    const new_generation = occupant.generation + 1;
+                    const new_generation = if (occupant.generation == std.math.maxInt(GenerationType)) 0 else occupant.generation + 1;
                     self.statuses.items[i.index] = EntryStatus.Empty(self.free_list_head, new_generation);
                     self.free_list_head = i.index;
                     self.len -= 1;
