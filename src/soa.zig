@@ -397,11 +397,11 @@ pub fn MultiArenaUnmanaged(comptime T: type, comptime InputIndexType: type, comp
             ctx: *Self,
             pos: usize = 0,
 
-            pub fn next(self: *DenseIterator) ?Entry {
+            pub fn next(self: *DenseIterator) ?Index {
                 if (self.pos >= self.ctx.dense.items.len) return null;
                 const index = self.ctx.dense.items[self.pos];
                 self.pos += 1;
-                return self.ctx.entries.get(index);
+                return self.ctx.statuses.items[index].occupied;
             }
         };
 
@@ -545,6 +545,11 @@ test {
     var dense_iter_field = arena.denseIteratorField(.a);
     while (dense_iter_field.next()) |field| {
         std.debug.print("{any}\n", .{field.*});
+    }
+
+    var dense_iter_reg = arena.denseIterator();
+    while (dense_iter_reg.next()) |e| {
+        std.debug.print("{any}\n", .{e});
     }
 
     // check handle by index
